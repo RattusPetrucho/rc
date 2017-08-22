@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"io/ioutil"
+	"os"
 	"path"
 	"sort"
 	"strings"
@@ -71,6 +72,44 @@ func (w *Window) startFindElementView(g *gocui.Gui, v *gocui.View) error {
 	return nil
 }
 
+// Продолжение поиска элемента в следующих элементах панели
+func (p *panel) nextSearch(g *gocui.Gui, v *gocui.View) error {
+	if p.search == "" {
+		return nil
+	}
+
+	for i := p.line + 1; i < len(p.elems); i++ {
+		if strings.Contains(strings.ToLower(p.elems[i].name), strings.ToLower(p.search)) {
+			p.line = i
+			if err := p.setCursor(); err != nil {
+				return err
+			}
+			return nil
+		}
+	}
+
+	return nil
+}
+
+// Продолжение поиска элемента в предыдущих элементах панели
+func (p *panel) prevSearch(g *gocui.Gui, v *gocui.View) error {
+	if p.search == "" {
+		return nil
+	}
+
+	for i := p.line - 1; i > 0; i-- {
+		if strings.Contains(strings.ToLower(p.elems[i].name), strings.ToLower(p.search)) {
+			p.line = i
+			if err := p.setCursor(); err != nil {
+				return err
+			}
+			return nil
+		}
+	}
+
+	return nil
+}
+
 // Окно быстрого перехода
 func (w *Window) showJumpView(g *gocui.Gui, v *gocui.View) error {
 	maxX, maxY := g.Size()
@@ -133,6 +172,52 @@ func (w *Window) startJump(g *gocui.Gui, v *gocui.View) error {
 	if _, err := g.SetCurrentView(w.cur_panel_name); err != nil {
 		return err
 	}
+	return nil
+}
+
+// Быстрое перемещение в GOPATH
+func (p *panel) goToGopath(g *gocui.Gui, v *gocui.View) error {
+	gopath := os.Getenv("GOPATH")
+	if gopath == "" {
+		return nil
+	}
+	if err := p.openDir(gopath); err != nil {
+		return err
+	}
+	p.line = 0
+	p.path = gopath
+	p.v.Title = gopath
+	for key := range p.hystory {
+		delete(p.hystory, key)
+	}
+
+	if err := p.setCursor(); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// Быстрое перемещение в HOME
+func (p *panel) goToHome(g *gocui.Gui, v *gocui.View) error {
+	home := os.Getenv("HOME")
+	if home == "" {
+		return nil
+	}
+	if err := p.openDir(home); err != nil {
+		return err
+	}
+	p.line = 0
+	p.path = home
+	p.v.Title = home
+	for key := range p.hystory {
+		delete(p.hystory, key)
+	}
+
+	if err := p.setCursor(); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -322,7 +407,6 @@ func (p *panel) openDir(dir string) error {
 			name:   "..",
 			path:   path.Dir(dir),
 			is_dir: true,
-			size:   0,
 		}
 		p.elems = append(p.elems, elem)
 	}
@@ -337,11 +421,9 @@ func (p *panel) openDir(dir string) error {
 		}
 		if val.IsDir() {
 			elem := element{
-				name:    val.Name(),
-				path:    dir + "/" + val.Name(),
-				is_dir:  val.IsDir(),
-				size:    val.Size(),
-				modtime: val.ModTime(),
+				name:   val.Name(),
+				path:   dir + "/" + val.Name(),
+				is_dir: val.IsDir(),
 			}
 
 			dirs = append(dirs, elem)
@@ -359,11 +441,9 @@ func (p *panel) openDir(dir string) error {
 		}
 		if !val.IsDir() {
 			elem := element{
-				name:    val.Name(),
-				path:    dir + "/" + val.Name(),
-				is_dir:  val.IsDir(),
-				size:    val.Size(),
-				modtime: val.ModTime(),
+				name:   val.Name(),
+				path:   dir + "/" + val.Name(),
+				is_dir: val.IsDir(),
 			}
 
 			files = append(files, elem)

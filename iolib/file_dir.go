@@ -1,10 +1,13 @@
 package iolib
 
 import (
+	"io/ioutil"
 	"os"
 	"os/exec"
 	"path"
+	"path/filepath"
 	"strings"
+	"sync"
 )
 
 var video = map[string]struct{}{
@@ -83,4 +86,49 @@ func Rename(oldpath, newpath string) error {
 // Удаление
 func Delete(path string) error {
 	return os.RemoveAll(path)
+}
+
+// Проверка закрыт ли канал
+func isChannelClosed(done <-chan struct{}) bool {
+	select {
+	case <-done:
+		return true
+	default:
+		return false
+	}
+}
+
+// Симафор для ограничения одновременно открытых декрипторов каталогов
+var info_sema = make(chan struct{}, 19)
+
+// Получение размера содержимого директории
+func GetFilesSizeInDir(path string, wg *sync.WaitGroup, filesize chan<- int64, done <-chan struct{}) {
+	defer wg.Done()
+	if isChannelClosed(done) {
+		return
+	}
+	info_sema <- struct{}{}
+	defer func() { <-info_sema }()
+	if isChannelClosed(done) {
+		return
+	}
+
+	entries, err := ioutil.ReadDir(path)
+	if err != nil {
+		return
+	}
+
+	for i := 0; i < len(entries); i++ {
+		if isChannelClosed(done) {
+			return
+		}
+		if entries[i].IsDir() {
+			wg.Add(1)
+			go GetFilesSizeInDir(filepath.Join(path, entries[i].Name()), wg, filesize, done)
+		}
+
+		filesize <- entries[i].Size()
+	}
+
+	entries = nil
 }

@@ -3,8 +3,7 @@ package ui
 import (
 	"fmt"
 	"os"
-	"strconv"
-	"time"
+	"strings"
 
 	"github.com/jroimartin/gocui"
 )
@@ -19,24 +18,24 @@ type Window struct {
 	p *panel // Активная панель
 
 	cur_panel_name string // Текущая активная панель
+
+	info_done chan struct{}
 }
 
 type panel struct {
-	v         *gocui.View    // Отображение панели
-	path      string         // Текущий пути панели
-	elems     []element      // Элементы внутри панели
 	show_hide bool           // Отображать ли скрытые файлы
 	line      int            // Текущая выделенная строка в панели
-	hystory   map[string]int // История выделенных строк по предыдущим путям панели
+	v         *gocui.View    // Отображение панели
+	path      string         // Текущий пути панели
 	search    string         // Последняя маска поиска
+	elems     []element      // Элементы внутри панели
+	hystory   map[string]int // История выделенных строк по предыдущим путям панели
 }
 
 type element struct {
-	name    string    // Имя файла/директории
-	path    string    // Абсолютный путь
-	is_dir  bool      // Это директория или файл
-	size    int64     // Размер
-	modtime time.Time // Время последней модификации
+	is_dir bool   // Это директория или файл
+	name   string // Имя файла/директории
+	path   string // Абсолютный путь
 }
 
 // Создание нового окна с двумя панелями
@@ -112,182 +111,6 @@ func (w *Window) layout(g *gocui.Gui) error {
 	return nil
 }
 
-// Установка сочетаний клавишь
-func (w *Window) keybindings() error {
-
-	// Перемещение курсора
-	if err := w.gui.SetKeybinding("l_panel", gocui.KeyArrowDown, gocui.ModNone, w.cursorDown); err != nil {
-		return err
-	}
-	if err := w.gui.SetKeybinding("l_panel", gocui.KeyArrowUp, gocui.ModNone, w.cursorUp); err != nil {
-		return err
-	}
-	if err := w.gui.SetKeybinding("r_panel", gocui.KeyArrowDown, gocui.ModNone, w.cursorDown); err != nil {
-		return err
-	}
-	if err := w.gui.SetKeybinding("r_panel", gocui.KeyArrowUp, gocui.ModNone, w.cursorUp); err != nil {
-		return err
-	}
-	if err := w.gui.SetKeybinding("l_panel", gocui.KeyPgup, gocui.ModNone, w.cursorPgUp); err != nil {
-		return err
-	}
-	if err := w.gui.SetKeybinding("r_panel", gocui.KeyPgup, gocui.ModNone, w.cursorPgUp); err != nil {
-		return err
-	}
-	if err := w.gui.SetKeybinding("l_panel", gocui.KeyPgdn, gocui.ModNone, w.cursorPgDown); err != nil {
-		return err
-	}
-	if err := w.gui.SetKeybinding("r_panel", gocui.KeyPgdn, gocui.ModNone, w.cursorPgDown); err != nil {
-		return err
-	}
-
-	// Открытие директории/файла
-	if err := w.gui.SetKeybinding("l_panel", gocui.KeyEnter, gocui.ModNone, w.enterLine); err != nil {
-		return err
-	}
-	if err := w.gui.SetKeybinding("r_panel", gocui.KeyEnter, gocui.ModNone, w.enterLine); err != nil {
-		return err
-	}
-
-	// Переоткрытие директории
-	if err := w.gui.SetKeybinding("l_panel", gocui.KeyCtrlR, gocui.ModNone, w.reopen); err != nil {
-		return err
-	}
-	if err := w.gui.SetKeybinding("r_panel", gocui.KeyCtrlR, gocui.ModNone, w.reopen); err != nil {
-		return err
-	}
-
-	// Поиск в списке элементов
-	if err := w.gui.SetKeybinding("l_panel", gocui.KeySpace, gocui.ModNone, w.showFindElementView); err != nil {
-		return err
-	}
-	if err := w.gui.SetKeybinding("r_panel", gocui.KeySpace, gocui.ModNone, w.showFindElementView); err != nil {
-		return err
-	}
-	if err := w.gui.SetKeybinding("find_elem", gocui.KeyCtrlC, gocui.ModNone, w.hideFindElementView); err != nil {
-		return err
-	}
-	if err := w.gui.SetKeybinding("find_elem", gocui.KeyEnter, gocui.ModNone, w.startFindElementView); err != nil {
-		return err
-	}
-	if err := w.gui.SetKeybinding("l_panel", gocui.KeyArrowRight, gocui.ModNone, w.l_panel.nextSearch); err != nil {
-		return err
-	}
-	if err := w.gui.SetKeybinding("r_panel", gocui.KeyArrowRight, gocui.ModNone, w.r_panel.nextSearch); err != nil {
-		return err
-	}
-	if err := w.gui.SetKeybinding("l_panel", gocui.KeyArrowLeft, gocui.ModNone, w.l_panel.prevSearch); err != nil {
-		return err
-	}
-	if err := w.gui.SetKeybinding("r_panel", gocui.KeyArrowLeft, gocui.ModNone, w.r_panel.prevSearch); err != nil {
-		return err
-	}
-
-	// Быстрое перемещение
-	if err := w.gui.SetKeybinding("l_panel", gocui.KeyCtrlZ, gocui.ModNone, w.showJumpView); err != nil {
-		return err
-	}
-	if err := w.gui.SetKeybinding("r_panel", gocui.KeyCtrlZ, gocui.ModNone, w.showJumpView); err != nil {
-		return err
-	}
-	if err := w.gui.SetKeybinding("jump", gocui.KeyCtrlC, gocui.ModNone, w.hideJumpView); err != nil {
-		return err
-	}
-	if err := w.gui.SetKeybinding("jump", gocui.KeyEnter, gocui.ModNone, w.startJump); err != nil {
-		return err
-	}
-
-	// Открытие информации по текущему элементу
-	if err := w.gui.SetKeybinding("l_panel", gocui.KeyF2, gocui.ModNone, w.showInfo); err != nil {
-		return err
-	}
-	if err := w.gui.SetKeybinding("r_panel", gocui.KeyF2, gocui.ModNone, w.showInfo); err != nil {
-		return err
-	}
-	if err := w.gui.SetKeybinding("info", gocui.KeyCtrlC, gocui.ModNone, w.hideInfo); err != nil {
-		return err
-	}
-
-	// Создание файла
-	if err := w.gui.SetKeybinding("l_panel", gocui.KeyF3, gocui.ModNone, w.mkFileView); err != nil {
-		return err
-	}
-	if err := w.gui.SetKeybinding("r_panel", gocui.KeyF3, gocui.ModNone, w.mkFileView); err != nil {
-		return err
-	}
-	if err := w.gui.SetKeybinding("new_file", gocui.KeyCtrlC, gocui.ModNone, w.hideMkFileView); err != nil {
-		return err
-	}
-	if err := w.gui.SetKeybinding("new_file", gocui.KeyEnter, gocui.ModNone, w.mkFile); err != nil {
-		return err
-	}
-
-	// Создание директории
-	if err := w.gui.SetKeybinding("l_panel", gocui.KeyF7, gocui.ModNone, w.mkDirView); err != nil {
-		return err
-	}
-	if err := w.gui.SetKeybinding("r_panel", gocui.KeyF7, gocui.ModNone, w.mkDirView); err != nil {
-		return err
-	}
-	if err := w.gui.SetKeybinding("new_dir", gocui.KeyCtrlC, gocui.ModNone, w.hideMkDirView); err != nil {
-		return err
-	}
-	if err := w.gui.SetKeybinding("new_dir", gocui.KeyEnter, gocui.ModNone, w.mkDir); err != nil {
-		return err
-	}
-
-	// Удаление элемента
-	if err := w.gui.SetKeybinding("l_panel", gocui.KeyF8, gocui.ModNone, w.delElemView); err != nil {
-		return err
-	}
-	if err := w.gui.SetKeybinding("r_panel", gocui.KeyF8, gocui.ModNone, w.delElemView); err != nil {
-		return err
-	}
-	if err := w.gui.SetKeybinding("del_elem", gocui.KeyCtrlC, gocui.ModNone, w.hideDelElemView); err != nil {
-		return err
-	}
-	if err := w.gui.SetKeybinding("del_elem", gocui.KeyEnter, gocui.ModNone, w.delElem); err != nil {
-		return err
-	}
-
-	// Переименование элемента
-	if err := w.gui.SetKeybinding("l_panel", gocui.KeyF6, gocui.ModNone, w.renameElemView); err != nil {
-		return err
-	}
-	if err := w.gui.SetKeybinding("r_panel", gocui.KeyF6, gocui.ModNone, w.renameElemView); err != nil {
-		return err
-	}
-	if err := w.gui.SetKeybinding("rename_elem", gocui.KeyCtrlC, gocui.ModNone, w.hideRenameElemView); err != nil {
-		return err
-	}
-	if err := w.gui.SetKeybinding("rename_elem", gocui.KeyEnter, gocui.ModNone, w.renameElem); err != nil {
-		return err
-	}
-
-	// Переключение между панелями
-	if err := w.gui.SetKeybinding("l_panel", gocui.KeyTab, gocui.ModNone, w.switchPanel); err != nil {
-		return err
-	}
-	if err := w.gui.SetKeybinding("r_panel", gocui.KeyTab, gocui.ModNone, w.switchPanel); err != nil {
-		return err
-	}
-
-	// Окно с помощью по hotkeys
-	if err := w.gui.SetKeybinding("", gocui.KeyF1, gocui.ModNone, showHelp); err != nil {
-		return err
-	}
-	if err := w.gui.SetKeybinding("help", gocui.KeyCtrlC, gocui.ModNone, w.hideHelp); err != nil {
-		return err
-	}
-
-	// Выход из приложения
-	if err := w.gui.SetKeybinding("", gocui.KeyF10, gocui.ModNone, quit); err != nil {
-		return err
-	}
-
-	return nil
-}
-
 // Переключение панелей
 func (w *Window) switchPanel(g *gocui.Gui, v *gocui.View) error {
 	switch w.cur_panel_name {
@@ -323,7 +146,7 @@ func quit(g *gocui.Gui, v *gocui.View) error {
 func showHelp(g *gocui.Gui, v *gocui.View) error {
 	maxX, maxY := g.Size()
 
-	if v, err := g.SetView("help", maxX/2-30, maxY/12, maxX/2+30, maxY/12+17); err != nil {
+	if v, err := g.SetView("help", maxX/2-30, maxY/14, maxX/2+30, maxY/14+23); err != nil {
 		if err != gocui.ErrUnknownView {
 			return err
 		}
@@ -331,13 +154,19 @@ func showHelp(g *gocui.Gui, v *gocui.View) error {
 		fmt.Fprintln(v, " * F1 - Help. Это окно.")
 		fmt.Fprintln(v, " * F2 - Выводит информацию о выбранном элементе.")
 		fmt.Fprintln(v, " * F3 - Создание нового файла.")
-		fmt.Fprintln(v, " * F4 - Редактирование файла в vim.")
 		fmt.Fprintln(v, " * F5 - Копирование.")
-		fmt.Fprintln(v, " * F5 - Переименование текущего элемента.")
+		fmt.Fprintln(v, " * F6 - Переименование текущего элемента.")
 		fmt.Fprintln(v, " * F7 - Создание директории.")
 		fmt.Fprintln(v, " * F8 - Удаление текущего элемента.")
 		fmt.Fprintln(v, " * F10 - Выход из rc.")
+		fmt.Fprintln(v, strings.Repeat("-", 60))
 		fmt.Fprintln(v, " * Space - Поиск элемента в текущей панели.")
+		fmt.Fprintln(v, "      -> - Next search.")
+		fmt.Fprintln(v, "      <- - Prev search.")
+		fmt.Fprintln(v, strings.Repeat("-", 60))
+		fmt.Fprintln(v, " * Ctrl+G - Переход в GOPATH.")
+		fmt.Fprintln(v, " * Ctrl+H - Переход в домашнюю директорию.")
+		fmt.Fprintln(v, strings.Repeat("-", 60))
 		fmt.Fprintln(v, " * Enter - Входит в папку либо открывает файл.")
 		fmt.Fprintln(v, "    - Видео файлы открываются с помощью mplayer.")
 		fmt.Fprintln(v, "    - Текстовые файлы открываются с помощью Sublime Text.")
@@ -357,58 +186,6 @@ func showHelp(g *gocui.Gui, v *gocui.View) error {
 // Скрытие окна помощи
 func (w *Window) hideHelp(g *gocui.Gui, v *gocui.View) error {
 	if err := g.DeleteView("help"); err != nil {
-		return err
-	}
-	if _, err := g.SetCurrentView(w.cur_panel_name); err != nil {
-		return err
-	}
-	return nil
-}
-
-// Отображение информации по выбранному элементу
-func (w *Window) showInfo(g *gocui.Gui, v *gocui.View) error {
-	if w.p.elems[w.p.line].name == ".." {
-		return nil
-	}
-	maxX, maxY := g.Size()
-
-	if v, err := g.SetView("info", maxX/2-30, maxY/12, maxX/2+30, maxY/12+5); err != nil {
-		if err != gocui.ErrUnknownView {
-			return err
-		}
-
-		fmt.Fprintln(v, " * Имя - "+w.p.elems[w.p.line].name)
-		size := w.p.elems[w.p.line].size
-		if size < 1024 {
-			fmt.Fprintln(v, " * Размер - "+strconv.FormatInt(size, 10)+"B")
-		} else if size/1024 < 1024 {
-			fmt.Fprintln(v, " * Размер - "+strconv.FormatInt(size/1024, 10)+"KB")
-		} else if size/(1024*1024) < 1024 {
-			fmt.Fprintln(v, " * Размер - "+strconv.FormatInt(size/(1024*1024), 10)+"MB")
-		} else if size/(1024*1024*1024) < 1024 {
-			fmt.Fprintln(v, " * Размер - "+strconv.FormatInt(size/(1024*1024*1024), 10)+"GB")
-		} else if size/(1024*1024*1024*1024) < 1024 {
-			fmt.Fprintln(v, " * Размер - "+strconv.FormatInt(size/(1024*1024*1024*1024), 10)+"TB")
-		}
-		if w.p.elems[w.p.line].is_dir {
-			fmt.Fprintln(v, " * Тип - директория")
-		} else {
-			fmt.Fprintln(v, " * Тип - файл")
-		}
-		fmt.Fprintln(v, " * Дата модификации -", w.p.elems[w.p.line].modtime.Format("15:04 02.01.2006 MST"))
-
-		if _, err := g.SetCurrentView("info"); err != nil {
-			return err
-		}
-		v.Title = "Info"
-	}
-
-	return nil
-}
-
-// Скрытие окна информации по выбранному элементу
-func (w *Window) hideInfo(g *gocui.Gui, v *gocui.View) error {
-	if err := g.DeleteView("info"); err != nil {
 		return err
 	}
 	if _, err := g.SetCurrentView(w.cur_panel_name); err != nil {
